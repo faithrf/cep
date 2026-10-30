@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "dev": "npm run build -w @cep/sdk && npm run start -w @cep/server",
-    "test": "node --import tsx --test \"packages/sdk/test/*.test.ts\" \"packages/stats/test/*.test.ts\" \"apps/server/test/*.test.ts\""
+    "dev": "npm run build -w @cep/sdk && node scripts/dev.mjs",
+    "test": "node --import tsx --test \"packages/sdk/test/*.test.ts\" \"packages/stats/test/*.test.ts\" \"apps/server/test/*.test.ts\" \"apps/demo/test/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

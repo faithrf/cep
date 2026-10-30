@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { analyzeBinary, srmCheck, verdict, MIN_EXPOSURES, SRM_P_THRESHOLD, WINNER_PROB_BEST } from '@cep/stats';
 import { compileConfig, getResults, getWeights, listExperiments } from './db.ts';
@@ -16,9 +16,10 @@ const MIME: Record<string, string> = {
 
 const str = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 200 ? v : null);
 
-export function createApp(db: DatabaseSync, opts: { demoDir: string; sdkFile: string; dashboardDir?: string }) {
+export function createApp(db: DatabaseSync, opts: { demoDir?: string; sdkFile: string; dashboardDir?: string }) {
   const app = new Hono();
   app.use('/v1/*', cors());
+  app.use('/sdk/*', cors());
 
   app.get('/v1/config/:envKey', (c) => c.json(compileConfig(db)));
 
@@ -108,17 +109,7 @@ export function createApp(db: DatabaseSync, opts: { demoDir: string; sdkFile: st
     }
   });
 
-  app.get('/*', async (c) => {
-    let path = normalize(c.req.path).replace(/^([/\\])+/, '');
-    if (!path || path.endsWith('/') || path.endsWith('\\')) path += 'index.html';
-    if (path.includes('..')) return c.text('not found', 404);
-    try {
-      const data = await readFile(join(opts.demoDir, path));
-      return c.body(data, 200, { 'Content-Type': MIME[extname(path)] ?? 'application/octet-stream' });
-    } catch {
-      return c.text('not found', 404);
-    }
-  });
+  app.get('/', (c) => c.redirect('/dashboard'));
 
   return app;
 }

@@ -6,9 +6,9 @@ In-app experiences + A/B testing. Local only, SQLite, no external services.
 
     npm install
     npm test        # hash vectors, bucketing split, results query
-    npm run dev     # builds the SDK, serves http://localhost:4000
+    npm run dev     # builds the SDK, starts cep (:4000) and the TaskFlow demo (:3100)
 
-Open http://localhost:4000 (demo "TaskFlow"). "Switch user" re-buckets with a new id.
+Open http://localhost:3100 (demo "TaskFlow", own SQLite DB at apps/demo/data/demo.db, loads the SDK cross-origin from :4000). Results dashboard: http://localhost:4000/dashboard. `PORT` overrides each server port; the demo uses `CEP_HOST` (default http://localhost:4000) to find cep. "Switch user" re-buckets with a new id.
 Clear localStorage to see the modal again (shown once per user).
 
 ## API
@@ -26,4 +26,4 @@ Clear localStorage to see the modal again (shown once per user).
 - `packages/stats` pure TS (seeded PRNG, beta sampler, Bayesian analysis, SRM chi-square, verdict); no deps
 
 Variants bucket in `position` order (control=0). DB schema version via `PRAGMA user_version`; v0 (M1) DBs are migrated with ALTER TABLE + backfill.
-- `apps/demo` static fake SaaS page
+- `apps/demo` TaskFlow: separate Hono server + SQLite (users/projects/tasks), integrates cep like a customer app

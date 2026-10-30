@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskFlow</title>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#f1f5f9;color:#0f172a}
+  header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 24px;display:flex;justify-content:space-between;align-items:center}
+  main{max-width:900px;margin:24px auto;padding:0 24px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:16px 0}
+  .card{background:#fff;border-radius:8px;padding:16px;border:1px solid #e2e8f0}
+  button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid #cbd5e1;background:#fff;padding:8px 14px}
+  button.primary{background:#4f46e5;color:#fff;border-color:#4f46e5}
+  #debug{position:fixed;bottom:8px;left:8px;font:11px monospace;color:#64748b;background:#fff;padding:4px 8px;border-radius:4px;border:1px solid #e2e8f0}
+  #toast{color:#15803d;margin-left:12px}
+  input{font:inherit;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px}
+  .row{display:flex;gap:8px;margin:8px 0}
+  .row input{flex:1;max-width:320px}
+  #projects{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:12px}
+  .proj h3{margin:0 0 8px}
+  .proj ul{list-style:none;margin:0 0 8px;padding:0;max-height:140px;overflow:auto}
+  .proj li{padding:2px 0}
+  .proj li.done span{text-decoration:line-through;color:#94a3b8}
+  .proj .row input{max-width:none;padding:4px 8px}
+  .proj .row button{padding:4px 10px}
+  .err{color:#b91c1c;margin-left:12px}
+  h1{margin:0 0 8px;font-size:22px}.cards p{margin:4px 0 0}.card h3{margin:0}
+</style>
+</head>
+<body>
+<header>
+  <strong>TaskFlow</strong>
+  <button id="switch">Switch user</button>
+</header>
+<main>
+  <h1>Dashboard</h1>
+  <div class="cards">
+    <div class="card"><h3>Projects</h3><p id="c-projects">-</p></div>
+    <div class="card"><h3>Tasks</h3><p id="c-tasks">-</p></div>
+    <div class="card"><h3>Team</h3><p id="c-members">-</p></div>
+  </div>
+  <form id="new" class="row">
+    <input id="name" maxlength="80" placeholder="New project name" autocomplete="off">
+    <button class="primary" type="submit">Create project</button><span id="toast"></span>
+  </form>
+  <div id="projects"></div>
+</main>
+<div id="debug">loading...</div>
+<script src="__CEP_HOST__/sdk/cep.js"></script>
+<script>
+  var USER_KEY = 'taskflow_user';
+  function newId() { return 'user_' + Math.random().toString(36).slice(2, 8); }
+  var userId = localStorage.getItem(USER_KEY);
+  if (!userId) { userId = newId(); localStorage.setItem(USER_KEY, userId); }
+
+  // Customer-style integration: identify first so bucketing uses the app's user id.
+  cep.identify(userId);
+  cep.init({ envKey: 'demo', apiHost: '__CEP_HOST__' }).then(function () {
+    document.getElementById('debug').textContent =
+      'user: ' + userId + ' | welcome-modal: ' + cep.getVariant('welcome-modal');
+  });
+
+  function $(id) { return document.getElementById(id); }
+  function msg(text, isErr) {
+    var t = $('toast'); t.textContent = text; t.className = isErr ? 'err' : ''; t.style.color = isErr ? '' : '#15803d';
+  }
+  function api(method, path, body) {
+    return fetch(path, {
+      method: method,
+      headers: { 'X-Demo-User': userId, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+    });
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+  function render() {
+    return Promise.all([api('GET', '/api/summary'), api('GET', '/api/projects')]).then(function (res) {
+      var s = res[0], ps = res[1].projects;
+      $('c-projects').textContent = s.projects + ' active';
+      $('c-tasks').textContent = s.openTasks + ' open';
+      $('c-members').textContent = plural(s.members, 'member', 'members');
+      var box = $('projects'); box.innerHTML = '';
+      ps.forEach(function (p) {
+        var card = document.createElement('div'); card.className = 'card proj';
+        var h = document.createElement('h3'); h.textContent = p.name; card.appendChild(h);
+        var ul = document.createElement('ul');
+        p.tasks.forEach(function (t) {
+          var li = document.createElement('li'); if (t.done) li.className = 'done';
+          var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = t.done;
+          cb.onchange = function () {
+            api('POST', '/api/tasks/' + t.id + '/toggle').then(function (r) {
+              if (r.done) cep.track('task_completed', { projectId: p.id });
+              return render();
+            }).catch(function (e) { msg(e.message, true); });
+          };
+          var sp = document.createElement('span'); sp.textContent = ' ' + t.title;
+          li.appendChild(cb); li.appendChild(sp); ul.appendChild(li);
+        });
+        card.appendChild(ul);
+        var f = document.createElement('form'); f.className = 'row';
+        var inp = document.createElement('input'); inp.placeholder = 'Add task'; inp.maxLength = 80;
+        var btn = document.createElement('button'); btn.type = 'submit'; btn.textContent = 'Add';
+        f.appendChild(inp); f.appendChild(btn);
+        f.onsubmit = function (e) {
+          e.preventDefault();
+          if (!inp.value.trim()) return;
+          api('POST', '/api/projects/' + p.id + '/tasks', { title: inp.value }).then(function () {
+            cep.track('task_created', { projectId: p.id });
+            return render();
+          }).catch(function (err) { msg(err.message, true); });
+        };
+        card.appendChild(f);
+        box.appendChild(card);
+      });
+    });
+  }
+
+  $('new').onsubmit = function (e) {
+    e.preventDefault();
+    var name = $('name').value;
+    if (!name.trim()) { msg('Enter a project name', true); return; }
+    api('POST', '/api/projects', { name: name }).then(function (p) {
+      cep.track('project_created', { projectId: p.id });
+      $('name').value = ''; msg('Project created!');
+      return render();
+    }).catch(function (err) { msg(err.message, true); });
+  };
+  $('switch').onclick = function () {
+    userId = newId(); localStorage.setItem(USER_KEY, userId);
+    cep.identify(userId);
+    setTimeout(function () { location.reload(); }, 200); // let the identify event flush
+  };
+  render().catch(function (e) { msg(e.message, true); });
+</script>
+</body>
+</html>
