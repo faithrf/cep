@@ -5,3 +5,4 @@ apps/server/data/
 *.db-*
 .env*
 coverage/
+.claude/settings.local.json
