@@ -1,0 +1,11 @@
+{
+  "name": "@cep/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "tsx src/index.ts" },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0"
+  }
+}
