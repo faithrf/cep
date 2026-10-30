@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CEP results</title>
+<style>
+  :root {
+    --paper: #eef1f4;
+    --panel: #ffffff;
+    --ink: #14282f;
+    --muted: #5d7079;
+    --line: #d3dbe0;
+    --teal: #0f6b6b;
+    --good: #1c7a4a;
+    --good-bg: #dff1e6;
+    --warn: #8a5a00;
+    --warn-bg: #fdf0cf;
+    --bad: #a6322b;
+    --bad-bg: #fbe3e0;
+    --info-bg: #e3eaee;
+    --bar-neg: #b9453d;
+    --bar-pos: #1c7a4a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0f1a1e; --panel: #172429; --ink: #e4edf0; --muted: #8fa4ad; --line: #2a3b42;
+      --teal: #5cc1c1; --good: #6fd09b; --good-bg: #17382a; --warn: #f0c05a; --warn-bg: #3a2e10;
+      --bad: #f08a82; --bad-bg: #3d1d1a; --info-bg: #22333a; --bar-neg: #e0766d; --bar-pos: #6fd09b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font: 14px/1.4 Bahnschrift, "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow-x: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 12px 24px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .01em; color: var(--teal); }
+  select {
+    font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+    border-radius: 4px; padding: 5px 8px; min-width: 200px;
+  }
+  select:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .spacer { flex: 1; }
+  .stamp { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  main { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+  .verdict { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
+    background: var(--info-bg); color: var(--ink);
+  }
+  .badge.winner { background: var(--good-bg); color: var(--good); }
+  .badge.srm { background: var(--bad-bg); color: var(--bad); }
+  .badge.not_enough_data { background: var(--warn-bg); color: var(--warn); }
+  .help { color: var(--muted); }
+  .banner {
+    background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad);
+    border-radius: 4px; padding: 8px 12px; font-weight: 500;
+  }
+  .banner[hidden] { display: none; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 10px 14px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 500; color: var(--muted); font-size: 12px; background: var(--panel); }
+  th:first-child, td:first-child { text-align: left; }
+  tr:last-child td { border-bottom: 0; }
+  td.name { font-weight: 600; }
+  td.name .tag { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .num-strong { font-weight: 600; }
+  td.liftcell { text-align: left; min-width: 300px; }
+  .lift { display: flex; align-items: center; gap: 10px; }
+  .lift-text { width: 200px; text-align: right; flex: none; }
+  svg.interval { flex: 1; min-width: 140px; height: 22px; }
+  .dim { color: var(--muted); }
+  .meta { display: flex; gap: 24px; color: var(--muted); font-size: 12px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .err { color: var(--bad); }
+  @media (max-width: 760px) { header, main { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Experiment results</h1>
+  <select id="exp" aria-label="Experiment"></select>
+  <span class="spacer"></span>
+  <span class="stamp" id="stamp">Loading</span>
+</header>
+<main>
+  <div class="verdict"><span class="badge" id="badge">...</span><span class="help" id="help"></span></div>
+  <div class="banner" id="srm" role="alert" hidden></div>
+  <div class="panel">
+    <table>
+      <thead><tr>
+        <th>Variant</th><th>Exposures</th><th>Conversions</th><th>Rate</th>
+        <th>Chance to beat control</th><th>Chance best</th><th style="text-align:left">Relative lift (95% interval)</th><th>Expected loss</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="meta" id="meta"></div>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var LABELS = { not_enough_data: 'Not enough data', srm: 'Results not trustworthy', winner: 'Winner found', running: 'Still running' };
+  var current = null;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = String(text);
+    return e;
+  }
+  function pct(x, d) { return (x * 100).toFixed(d == null ? 1 : d) + '%'; }
+  function signed(x) { return (x >= 0 ? '+' : '') + pct(x); }
+
+  function helpText(r) {
+    var t = r.thresholds || {};
+    if (r.verdict === 'not_enough_data') return 'Not enough data yet: need ' + t.minExposures + ' exposures per variant.';
+    if (r.verdict === 'srm') return 'Traffic split does not match the planned weights, so these numbers can mislead. Check assignment before trusting them.';
+    if (r.verdict === 'winner') {
+      var w = r.variants.filter(function (v) { return v.probBest >= t.winnerProbBest; })[0];
+      return (w ? w.variant : 'A variant') + ' has at least a ' + pct(t.winnerProbBest, 0) + ' chance of being the best.';
+    }
+    return 'No variant has reached a ' + pct(t.winnerProbBest, 0) + ' chance of being best yet. Keep collecting data.';
+  }
+
+  function intervalBar(lift, scale) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'interval');
+    svg.setAttribute('viewBox', '0 0 200 22');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    function x(v) { return 100 + (v / scale) * 95; }
+    var axis = document.createElementNS(SVGNS, 'line');
+    axis.setAttribute('x1', 0); axis.setAttribute('x2', 200); axis.setAttribute('y1', 11); axis.setAttribute('y2', 11);
+    axis.setAttribute('stroke', 'currentColor'); axis.setAttribute('opacity', '.15');
+    svg.appendChild(axis);
+    var color = lift.low > 0 ? 'var(--bar-pos)' : lift.high < 0 ? 'var(--bar-neg)' : 'var(--muted)';
+    var bar = document.createElementNS(SVGNS, 'rect');
+    var x1 = x(lift.low), x2 = x(lift.high);
+    bar.setAttribute('x', x1); bar.setAttribute('width', Math.max(2, x2 - x1));
+    bar.setAttribute('y', 7); bar.setAttribute('height', 8); bar.setAttribute('rx', 2);
+    bar.setAttribute('fill', color); bar.setAttribute('opacity', '.35');
+    svg.appendChild(bar);
+    var mean = document.createElementNS(SVGNS, 'rect');
+    mean.setAttribute('x', x(lift.mean) - 1); mean.setAttribute('width', 2.5);
+    mean.setAttribute('y', 4); mean.setAttribute('height', 14); mean.setAttribute('fill', color);
+    svg.appendChild(mean);
+    var zero = document.createElementNS(SVGNS, 'line');
+    zero.setAttribute('x1', 100); zero.setAttribute('x2', 100); zero.setAttribute('y1', 0); zero.setAttribute('y2', 22);
+    zero.setAttribute('stroke', 'currentColor'); zero.setAttribute('stroke-width', 1); zero.setAttribute('opacity', '.6');
+    svg.appendChild(zero);
+    return svg;
+  }
+
+  function render(r) {
+    var badge = $('badge');
+    badge.className = 'badge ' + r.verdict;
+    badge.textContent = LABELS[r.verdict] || r.verdict;
+    $('help').textContent = helpText(r);
+
+    var banner = $('srm');
+    if (r.srm && r.srm.flagged) {
+      banner.hidden = false;
+      banner.textContent = 'Sample ratio mismatch: observed exposures differ from the planned split (chi-square ' +
+        r.srm.chi2.toFixed(2) + ', p = ' + r.srm.pValue.toExponential(2) + '). Do not trust these results.';
+    } else { banner.hidden = true; banner.textContent = ''; }
+
+    var scale = 0.05;
+    r.variants.forEach(function (v) {
+      if (v.lift) scale = Math.max(scale, Math.abs(v.lift.low), Math.abs(v.lift.high));
+    });
+    scale *= 1.1;
+
+    var tbody = $('rows');
+    tbody.textContent = '';
+    r.variants.forEach(function (v, i) {
+      var tr = el('tr');
+      var name = el('td', 'name', v.variant);
+      if (i === 0 && v.variant !== 'control') name.appendChild(el('span', 'tag', 'control'));
+      tr.appendChild(name);
+      tr.appendChild(el('td', null, v.exposures.toLocaleString()));
+      tr.appendChild(el('td', null, v.conversions.toLocaleString()));
+      tr.appendChild(el('td', 'num-strong', pct(v.conversionRate, 2)));
+      tr.appendChild(el('td', v.probBeatControl == null ? 'dim' : 'num-strong', v.probBeatControl == null ? 'baseline' : pct(v.probBeatControl)));
+      tr.appendChild(el('td', null, pct(v.probBest)));
+      var lc = el('td', 'liftcell');
+      if (v.lift) {
+        var wrap = el('div', 'lift');
+        wrap.appendChild(el('span', 'lift-text', signed(v.lift.mean) + '  (' + signed(v.lift.low) + ' to ' + signed(v.lift.high) + ')'));
+        wrap.appendChild(intervalBar(v.lift, scale));
+        lc.appendChild(wrap);
+      } else { lc.appendChild(el('span', 'dim', 'baseline')); }
+      tr.appendChild(lc);
+      tr.appendChild(el('td', null, pct(v.expectedLoss, 3)));
+      tbody.appendChild(tr);
+    });
+
+    var meta = $('meta');
+    meta.textContent = '';
+    meta.appendChild(el('span', null, 'Planned split: ' + r.variants.map(function (v) { return v.variant + ' ' + pct(v.expectedWeight, 0); }).join(', ')));
+    if (r.srm) meta.appendChild(el('span', null, 'Split check: p = ' + r.srm.pValue.toPrecision(3) + ' (flagged below ' + r.thresholds.srmPValue + ')'));
+    meta.appendChild(el('span', null, 'Expected loss: average conversion-rate points given up if you ship that variant.'));
+  }
+
+  function stamp(msg, isErr) {
+    var s = $('stamp');
+    s.textContent = msg;
+    s.className = 'stamp' + (isErr ? ' err' : '');
+  }
+
+  function loadResults() {
+    if (!current) return Promise.resolve();
+    return fetch('/v1/results/' + encodeURIComponent(current)).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function (r) {
+      render(r);
+      stamp('Updated ' + new Date().toLocaleTimeString() + ', refreshes every 5s');
+    }).catch(function (e) { stamp('Could not load results: ' + e.message, true); });
+  }
+
+  fetch('/v1/experiments').then(function (r) { return r.json(); }).then(function (d) {
+    var sel = $('exp');
+    d.experiments.forEach(function (e) {
+      var o = el('option', null, e.key + ' (' + e.status + ')');
+      o.value = e.key;
+      sel.appendChild(o);
+    });
+    if (!d.experiments.length) { stamp('No experiments yet', true); return; }
+    current = d.experiments[0].key;
+    sel.addEventListener('change', function () { current = sel.value; loadResults(); });
+    loadResults();
+    setInterval(loadResults, 5000);
+  }).catch(function (e) { stamp('Could not load experiments: ' + e.message, true); });
+})();
+</script>
+</body>
+</html>

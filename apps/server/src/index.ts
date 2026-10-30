@@ -8,6 +8,7 @@ const db = openDb(join(import.meta.dirname, '..', 'data', 'cep.db'));
 seed(db);
 
 const app = createApp(db, {
+  dashboardDir: join(import.meta.dirname, '..', 'public'),
   demoDir: join(root, 'apps', 'demo'),
   sdkFile: join(root, 'packages', 'sdk', 'dist', 'cep.js'),
 });

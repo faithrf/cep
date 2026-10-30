@@ -5,7 +5,7 @@
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "dev": "npm run build -w @cep/sdk && npm run start -w @cep/server",
-    "test": "node --import tsx --test \"packages/sdk/test/*.test.ts\" \"apps/server/test/*.test.ts\""
+    "test": "node --import tsx --test \"packages/sdk/test/*.test.ts\" \"packages/stats/test/*.test.ts\" \"apps/server/test/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

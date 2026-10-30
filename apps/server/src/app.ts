@@ -3,7 +3,8 @@ import { cors } from 'hono/cors';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { compileConfig, getResults } from './db.ts';
+import { analyzeBinary, srmCheck, verdict, MIN_EXPOSURES, SRM_P_THRESHOLD, WINNER_PROB_BEST } from '@cep/stats';
+import { compileConfig, getResults, getWeights, listExperiments } from './db.ts';
 
 const EVENT_TYPES = new Set(['exposure', 'track', 'identify']);
 const MAX_BATCH = 100;
@@ -15,7 +16,7 @@ const MIME: Record<string, string> = {
 
 const str = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 200 ? v : null);
 
-export function createApp(db: DatabaseSync, opts: { demoDir: string; sdkFile: string }) {
+export function createApp(db: DatabaseSync, opts: { demoDir: string; sdkFile: string; dashboardDir?: string }) {
   const app = new Hono();
   app.use('/v1/*', cors());
 
@@ -68,7 +69,35 @@ export function createApp(db: DatabaseSync, opts: { demoDir: string; sdkFile: st
     const key = c.req.param('experimentKey');
     const variants = getResults(db, key);
     if (!variants) return c.json({ error: 'not found' }, 404);
-    return c.json({ experiment: key, variants });
+    const counts = variants.map((v) => ({ key: v.variant, exposures: v.exposures, conversions: v.conversions }));
+    const stats = analyzeBinary(counts);
+    const weights = getWeights(db, key);
+    const wsum = weights.reduce((a, b) => a + b, 0) || 1;
+    const srm = srmCheck(counts.map((v) => v.exposures), weights);
+    return c.json({
+      experiment: key,
+      variants: variants.map((v, i) => ({
+        ...v,
+        probBeatControl: stats[i].probBeatControl,
+        probBest: stats[i].probBest,
+        lift: stats[i].lift,
+        expectedLoss: stats[i].expectedLoss,
+        expectedWeight: weights[i] / wsum,
+      })),
+      srm,
+      verdict: verdict(counts, stats, srm),
+      thresholds: { minExposures: MIN_EXPOSURES, srmPValue: SRM_P_THRESHOLD, winnerProbBest: WINNER_PROB_BEST },
+    });
+  });
+
+  app.get('/v1/experiments', (c) => c.json({ experiments: listExperiments(db) }));
+
+  app.get('/dashboard', async (c) => {
+    try {
+      return c.body(await readFile(join(opts.dashboardDir ?? '', 'dashboard.html')), 200, { 'Content-Type': MIME['.html'] });
+    } catch {
+      return c.text('dashboard not found', 404);
+    }
   });
 
   app.get('/sdk/cep.js', async (c) => {
