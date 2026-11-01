@@ -27,3 +27,7 @@ Clear localStorage to see the modal again (shown once per user).
 
 Variants bucket in `position` order (control=0). DB schema version via `PRAGMA user_version`; v0 (M1) DBs are migrated with ALTER TABLE + backfill.
 - `apps/demo` TaskFlow: separate Hono server + SQLite (users/projects/tasks), integrates cep like a customer app
+
+## License
+
+MIT, Copyright (c) 2026 faithrf. See LICENSE.
